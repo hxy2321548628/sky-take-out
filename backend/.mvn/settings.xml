@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  构建镜像 / 本机 mvnw 共用：把 Maven Central 换成阿里云镜像。
+  构建镜像 / 本机 Maven Wrapper（task build）共用：把 Maven Central 换成阿里云镜像。
   海外网络环境可以删掉 <mirrors> 里的这一条。
 -->
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"

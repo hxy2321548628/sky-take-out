@@ -3,7 +3,6 @@ target/
 *.class
 *.jar
 *.war
-!.mvn/wrapper/maven-wrapper.jar
 *.log
 hs_err_pid*
 replay_pid*
@@ -35,6 +34,7 @@ coverage/
 Thumbs.db
 
 # ---------- 本地运行时产物 ----------
+.task/
 /data/
 *.pid
 

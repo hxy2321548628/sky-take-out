@@ -10,9 +10,25 @@ silent: true
 
 vars:
   COMPOSE: docker compose -f deploy/compose/docker-compose.yml
-  MVN_IMAGE: maven:3.9-eclipse-temurin-17
   TAG:
     sh: git rev-parse --short HEAD 2>/dev/null || echo dev
+  # 定位 JDK 17：JAVA_HOME 已是 17 就直接用，否则按平台探测（macOS / Linux）
+  # 找不到时输出空串，由 build 任务的 precondition 给出可读报错
+  JAVA17_HOME:
+    sh: |-
+      if [ -n "${JAVA_HOME:-}" ] && "$JAVA_HOME/bin/java" -version 2>&1 | grep -q 'version "17'; then
+        echo "$JAVA_HOME"
+      elif [ "$(uname -s)" = "Darwin" ] && /usr/libexec/java_home -v 17 >/dev/null 2>&1; then
+        /usr/libexec/java_home -v 17
+      elif [ -d /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home ]; then
+        echo /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+      elif [ -d /usr/lib/jvm/java-17-openjdk-amd64 ]; then
+        echo /usr/lib/jvm/java-17-openjdk-amd64
+      elif [ -d /usr/lib/jvm/java-17-openjdk ]; then
+        echo /usr/lib/jvm/java-17-openjdk
+      else
+        echo ""
+      fi
 
 tasks:
   default:
@@ -90,21 +106,17 @@ tasks:
 
   # ---------- 构建 ----------
   build:
-    desc: 容器内编译后端（无需本机 JDK/Maven）
+    desc: 用本机 Maven Wrapper 编译后端（自动选用 JDK 17）
     dir: backend
-    cmds:
-      - >-
-        docker run --rm -v "$PWD":/build -w /build
-        -v "$PWD/.mvn/settings.xml":/root/.m2/settings.xml
-        -v sky-m2:/root/.m2/repository {{.MVN_IMAGE}}
-        mvn -B -s /root/.m2/settings.xml -DskipTests package
-
-  build:local:
-    desc: 用本机 mvnw 编译后端（需本机 JDK 17；只有 JDK 21 时用 task build）
-    dir: backend
+    preconditions:
+      - sh: test -x "{{.JAVA17_HOME}}/bin/java"
+        msg: '未找到 JDK 17：安装后重试（macOS: brew install openjdk@17；Debian/Ubuntu: apt install openjdk-17-jdk）'
+      - sh: test -x ./mvnw
+        msg: '缺少 Maven Wrapper（backend/mvnw），请从仓库重新检出'
     sources: ['**/*.java', '**/pom.xml', '**/resources/**']
     generates: ['sky-server/target/*.jar']
-    cmds: ['./mvnw -B -s .mvn/settings.xml -DskipTests package']
+    # 用命令内赋值而不是 task 级 env：Task 的 env 不会覆盖父进程已有的 JAVA_HOME
+    cmds: ['JAVA_HOME="{{.JAVA17_HOME}}" ./mvnw -B -s .mvn/settings.xml -DskipTests package']
 
   image:
     desc: 构建镜像（当前平台）

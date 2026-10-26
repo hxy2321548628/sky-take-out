@@ -3,6 +3,4 @@ target/
 .idea/
 .vscode/
 *.log
-mvnw
-mvnw.cmd
 # .mvn/settings.xml 需要进镜像（Maven 镜像源配置），不要在这里排除

@@ -8,12 +8,19 @@
 FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /build
 
-# 国内网络下 repo.maven.apache.org 很慢，用阿里云镜像（海外环境可删掉 settings.xml 的 mirrors）
+# 国内网络下 repo.maven.apache.org 很慢，默认走阿里云镜像；
+# 海外 CI 可以传 --build-arg MAVEN_SETTINGS= 关掉（直接连 Maven Central）。
+ARG MAVEN_SETTINGS=.mvn/settings.xml
+
 # 注意：缓存要挂在 repository 子目录，不能挂在 /root/.m2，
 # 否则 cache mount 会覆盖掉这里的 settings.xml，等于没用镜像源。
 COPY . .
 RUN --mount=type=cache,target=/root/.m2/repository \
-    mvn -B -s .mvn/settings.xml -DskipTests package
+    if [ -n "$MAVEN_SETTINGS" ]; then \
+        mvn -B -s "$MAVEN_SETTINGS" -DskipTests package; \
+    else \
+        mvn -B -DskipTests package; \
+    fi
 
 # ---------- 2. 分层提取 ----------
 # 把 fat jar 拆成 dependencies / spring-boot-loader / snapshot-dependencies / application
