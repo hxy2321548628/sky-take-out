@@ -1,3 +1,7 @@
+-- ============================================================
+-- V1：初始表结构（来自黑马课程 db/legacy/sky.sql）
+-- 已执行过的迁移不要再改，后续变更请新增 V3__xxx.sql
+-- ============================================================
 DROP TABLE IF EXISTS `address_book`;
 CREATE TABLE `address_book` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键',

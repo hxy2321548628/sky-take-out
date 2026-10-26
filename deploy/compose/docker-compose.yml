@@ -22,8 +22,7 @@ services:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      # 首次启动（数据卷为空）时按文件名顺序执行 01-schema / 02-seed
-      - ../../db/init:/docker-entrypoint-initdb.d:ro
+      # 表结构和种子数据由后端启动时的 Flyway 迁移负责（backend/.../db/migration）
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
@@ -48,11 +47,11 @@ services:
       retries: 20
     networks: [sky-net]
 
-  # 对象存储：替代阿里云 OSS（仅本地需要，按需启动 task up:oss）
+  # 对象存储：替代阿里云 OSS。属于默认开发栈（task up 会起），
+  # 不在 profile 里，这样 docker compose down 也能一并停掉它
   minio:
     image: minio/minio:latest
     container_name: sky-minio
-    profiles: [oss]
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -71,11 +70,11 @@ services:
     networks: [sky-net]
 
   # 一次性任务：建好业务桶后退出，用于替代阿里云 OSS
-  # 默认不启动（profile: oss），需要时执行 task minio:init
+  # 放在 init profile 里，不会被 up 拉起；由 task minio:init 显式触发（幂等）
   minio-init:
     image: minio/mc:latest
     container_name: sky-minio-init
-    profiles: [oss]
+    profiles: [init]
     depends_on:
       minio:
         condition: service_healthy
@@ -100,6 +99,8 @@ services:
     image: sky-server:dev
     container_name: sky-server
     restart: unless-stopped
+    # 与 server.shutdown: graceful 配合，给在途请求 30s 排水时间
+    stop_grace_period: 30s
     depends_on:
       mysql:
         condition: service_healthy

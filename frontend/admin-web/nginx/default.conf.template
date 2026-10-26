@@ -14,9 +14,12 @@ server {
     gzip_types text/plain text/css application/javascript application/json image/svg+xml;
 
     # ---- 后端反向代理 ----
-    # 前端 baseURL 是 /api/admin，这里剥掉 /api 前缀后转发给后端
+    # 前端 baseURL 是 /api/admin，这里剥掉 /api 前缀后转发给后端。
+    # 注意：proxy_pass 里用了变量时，nginx 不会自动按 location 前缀做替换，
+    # 必须显式 rewrite，否则整条 URI 会被 proxy_pass 的 "/" 覆盖掉（表现为 404）。
     location /api/ {
-        proxy_pass         $backend_origin/;
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass         $backend_origin;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;

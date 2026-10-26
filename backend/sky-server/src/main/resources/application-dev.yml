@@ -1,8 +1,13 @@
+# ============================================================
+# 本机 IDE 运行（默认 profile）
+# 依赖只起基础设施即可：task up:infra
+# 端口/账号可用环境变量覆盖，和容器里保持同一套命名
+# ============================================================
 sky:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    host: localhost
-    port: 3306
-    database: sky_take_out
-    username: root
-    password: root
+    host: ${SKY_DB_HOST:localhost}
+    port: ${SKY_DB_PORT:3306}
+    database: ${SKY_DB_NAME:sky_take_out}
+    username: ${SKY_DB_USER:root}
+    password: ${SKY_DB_PASSWORD:root}

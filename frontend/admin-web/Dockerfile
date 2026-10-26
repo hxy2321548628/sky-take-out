@@ -12,10 +12,12 @@
 FROM node:16-bullseye AS build
 WORKDIR /app
 
-ENV NODE_OPTIONS=--max-old-space-size=2048
+# Cypress 二进制仅 e2e 测试需要，构建阶段跳过（下载源在国内经常超时）
+ENV NODE_OPTIONS=--max-old-space-size=2048 \
+    CYPRESS_INSTALL_BINARY=0
 
-COPY package.json yarn.lock package-lock.json ./
-RUN yarn install --frozen-lockfile --network-timeout 600000 || npm ci
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile --network-timeout 600000
 
 COPY . .
 RUN yarn build

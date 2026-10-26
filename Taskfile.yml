@@ -30,28 +30,23 @@ tasks:
 
   # ---------- 本地开发栈 ----------
   up:
-    desc: 启动全部服务（首次会自动建库 + 灌数据）
+    desc: 启动全部服务（mysql/redis/minio + 应用，首次启动由 Flyway 建表）
     deps: [doctor]
     cmds:
       - '{{.COMPOSE}} up -d --build'
+      - task: minio:init
       - task: ps
 
   up:infra:
-    desc: 只启动 mysql/redis（后端在 IDE 里跑时用）
+    desc: 只启动 mysql/redis/minio（后端在 IDE 里跑时用）
     cmds:
-      - '{{.COMPOSE}} up -d --wait mysql redis'
-      - echo "mysql :3306  redis :6379"
-
-  up:oss:
-    desc: 启动 MinIO（实现文件上传功能时再用）
-    cmds:
-      - '{{.COMPOSE}} --profile oss up -d --wait minio'
-      - echo "minio :9000  控制台 :9001"
+      - '{{.COMPOSE}} up -d --wait mysql redis minio'
+      - echo "mysql :3306  redis :6379  minio :9000  控制台 :9001"
 
   minio:init:
-    desc: 创建业务桶（代替阿里云 OSS 的 bucket）
+    desc: 创建业务桶（幂等，可重复执行；task up 会自动调用）
     cmds:
-      - '{{.COMPOSE}} --profile oss run --rm minio-init'
+      - '{{.COMPOSE}} run --rm -T minio-init'
 
   down:
     desc: 停止服务（保留数据卷）
@@ -76,7 +71,17 @@ tasks:
     cmds:
       - '{{.COMPOSE}} down -v'
       - '{{.COMPOSE}} up -d mysql --wait'
-      - echo "数据库已重建"
+      - echo "数据库已重建；表结构和种子数据会在后端下次启动时由 Flyway 创建"
+      - task: minio:init
+
+  db:migrations:
+    desc: 查看 Flyway 迁移记录
+    cmds:
+      - >-
+        docker exec sky-mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD:-root}"
+        "${MYSQL_DATABASE:-sky_take_out}"
+        -e "SELECT installed_rank, version, description, success, installed_on
+        FROM flyway_schema_history ORDER BY installed_rank"
 
   db:shell:
     desc: 进入 MySQL 命令行
@@ -90,11 +95,12 @@ tasks:
     cmds:
       - >-
         docker run --rm -v "$PWD":/build -w /build
-        -v sky-m2:/root/.m2 {{.MVN_IMAGE}}
-        mvn -B -DskipTests package
+        -v "$PWD/.mvn/settings.xml":/root/.m2/settings.xml
+        -v sky-m2:/root/.m2/repository {{.MVN_IMAGE}}
+        mvn -B -s /root/.m2/settings.xml -DskipTests package
 
   build:local:
-    desc: 用本机 mvnw 编译后端（需本机 JDK 17）
+    desc: 用本机 mvnw 编译后端（需本机 JDK 17；只有 JDK 21 时用 task build）
     dir: backend
     sources: ['**/*.java', '**/pom.xml', '**/resources/**']
     generates: ['sky-server/target/*.jar']
@@ -108,9 +114,9 @@ tasks:
 
   # ---------- 前端 ----------
   fe:install:
-    desc: 安装管理端依赖（本机 Node 16 环境下）
+    desc: 安装管理端依赖（本机 Node 16 环境下，跳过 Cypress 二进制）
     dir: frontend/admin-web
-    cmds: ['yarn install --frozen-lockfile']
+    cmds: ['CYPRESS_INSTALL_BINARY=0 yarn install --frozen-lockfile']
 
   fe:dev:
     desc: 本机启动管理端开发服务器（:8888）
