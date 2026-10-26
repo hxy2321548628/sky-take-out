@@ -1,0 +1,134 @@
+version: '3'
+
+# ============================================================
+# 苍穹外卖 · 云原生改造（学习用）
+# 运行 task --list 看全部命令；task <name> 执行
+# ============================================================
+
+dotenv: ['.env']
+silent: true
+
+vars:
+  COMPOSE: docker compose -f deploy/compose/docker-compose.yml
+  MVN_IMAGE: maven:3.9-eclipse-temurin-17
+  TAG:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo dev
+
+tasks:
+  default:
+    desc: 列出全部任务
+    cmds: [task --list]
+
+  # ---------- 环境自检 ----------
+  doctor:
+    desc: 检查本机依赖是否齐备
+    cmds:
+      - for: [docker, git]
+        cmd: 'command -v {{.ITEM}} >/dev/null || { echo "✗ 缺少 {{.ITEM}}"; exit 1; }'
+      - 'docker compose version >/dev/null && echo "✓ docker compose"'
+      - 'docker buildx version >/dev/null && echo "✓ docker buildx"'
+
+  # ---------- 本地开发栈 ----------
+  up:
+    desc: 启动全部服务（首次会自动建库 + 灌数据）
+    deps: [doctor]
+    cmds:
+      - '{{.COMPOSE}} up -d --build'
+      - task: ps
+
+  up:infra:
+    desc: 只启动 mysql/redis（后端在 IDE 里跑时用）
+    cmds:
+      - '{{.COMPOSE}} up -d --wait mysql redis'
+      - echo "mysql :3306  redis :6379"
+
+  up:oss:
+    desc: 启动 MinIO（实现文件上传功能时再用）
+    cmds:
+      - '{{.COMPOSE}} --profile oss up -d --wait minio'
+      - echo "minio :9000  控制台 :9001"
+
+  minio:init:
+    desc: 创建业务桶（代替阿里云 OSS 的 bucket）
+    cmds:
+      - '{{.COMPOSE}} --profile oss run --rm minio-init'
+
+  down:
+    desc: 停止服务（保留数据卷）
+    cmds: ['{{.COMPOSE}} down']
+
+  restart:
+    desc: 重建并重启后端与管理端
+    cmds:
+      - '{{.COMPOSE}} up -d --build sky-server admin-web'
+
+  ps:
+    desc: 查看容器与健康状态
+    cmds: ['{{.COMPOSE}} ps']
+
+  logs:
+    desc: 跟踪后端日志（task logs -- admin-web 可换服务）
+    cmds: ['{{.COMPOSE}} logs -f --tail=200 {{.CLI_ARGS | default "sky-server"}}']
+
+  db:reset:
+    desc: 删除数据卷并重新初始化数据库（会丢数据）
+    prompt: 确认删除 mysql/redis/minio 数据卷并重新初始化？
+    cmds:
+      - '{{.COMPOSE}} down -v'
+      - '{{.COMPOSE}} up -d mysql --wait'
+      - echo "数据库已重建"
+
+  db:shell:
+    desc: 进入 MySQL 命令行
+    cmds:
+      - 'docker exec -it sky-mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD:-root}" "${MYSQL_DATABASE:-sky_take_out}"'
+
+  # ---------- 构建 ----------
+  build:
+    desc: 容器内编译后端（无需本机 JDK/Maven）
+    dir: backend
+    cmds:
+      - >-
+        docker run --rm -v "$PWD":/build -w /build
+        -v sky-m2:/root/.m2 {{.MVN_IMAGE}}
+        mvn -B -DskipTests package
+
+  build:local:
+    desc: 用本机 mvnw 编译后端（需本机 JDK 17）
+    dir: backend
+    sources: ['**/*.java', '**/pom.xml', '**/resources/**']
+    generates: ['sky-server/target/*.jar']
+    cmds: ['./mvnw -B -s .mvn/settings.xml -DskipTests package']
+
+  image:
+    desc: 构建镜像（当前平台）
+    cmds:
+      - 'docker build -t sky-server:{{.TAG}} backend/'
+      - 'docker build -t sky-admin-web:{{.TAG}} frontend/admin-web/'
+
+  # ---------- 前端 ----------
+  fe:install:
+    desc: 安装管理端依赖（本机 Node 16 环境下）
+    dir: frontend/admin-web
+    cmds: ['yarn install --frozen-lockfile']
+
+  fe:dev:
+    desc: 本机启动管理端开发服务器（:8888）
+    dir: frontend/admin-web
+    cmds: ['yarn serve']
+
+  # ---------- 冒烟 ----------
+  smoke:
+    desc: 冒烟测试（登录接口应返回 code=1）
+    cmds:
+      - >-
+        curl -sf -X POST http://localhost:${SERVER_PORT:-8080}/admin/employee/login
+        -H 'Content-Type: application/json'
+        -d '{"username":"admin","password":"123456"}'
+        | jq -e '.code == 1'
+      - echo "✓ 登录接口正常"
+
+  smoke:health:
+    desc: 检查后端健康端点
+    cmds:
+      - 'curl -fsS http://localhost:${SERVER_PORT:-8080}/actuator/health | jq .'

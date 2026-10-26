@@ -1,0 +1,148 @@
+# ============================================================
+# 本地开发编排：mysql + redis + minio + 后端 + 管理端
+# 用法：task up / task down / task logs
+# 变量来自仓库根目录的 .env（cp .env.example .env）
+# ============================================================
+name: sky-take-out
+
+services:
+  # ---------- 基础设施 ----------
+  mysql:
+    image: mysql:8.0
+    container_name: sky-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sky_take_out}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次启动（数据卷为空）时按文件名顺序执行 01-schema / 02-seed
+      - ../../db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks: [sky-net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: sky-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [sky-net]
+
+  # 对象存储：替代阿里云 OSS（仅本地需要，按需启动 task up:oss）
+  minio:
+    image: minio/minio:latest
+    container_name: sky-minio
+    profiles: [oss]
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [sky-net]
+
+  # 一次性任务：建好业务桶后退出，用于替代阿里云 OSS
+  # 默认不启动（profile: oss），需要时执行 task minio:init
+  minio-init:
+    image: minio/mc:latest
+    container_name: sky-minio-init
+    profiles: [oss]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb --ignore-existing local/$${MINIO_BUCKET} &&
+      mc anonymous set download local/$${MINIO_BUCKET} &&
+      echo 'minio bucket ready: ' $${MINIO_BUCKET}
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-sky-take-out}
+    networks: [sky-net]
+
+  # ---------- 应用 ----------
+  sky-server:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    image: sky-server:dev
+    container_name: sky-server
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      TZ: Asia/Shanghai
+      SKY_DB_HOST: mysql
+      SKY_DB_PORT: 3306
+      SKY_DB_NAME: ${MYSQL_DATABASE:-sky_take_out}
+      SKY_DB_USER: root
+      SKY_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      SKY_REDIS_HOST: redis
+      SKY_REDIS_PORT: 6379
+      SKY_JWT_ADMIN_SECRET: ${SKY_JWT_ADMIN_SECRET:-dev-only-secret-change-me}
+      SKY_JWT_USER_SECRET: ${SKY_JWT_USER_SECRET:-dev-only-secret-change-me}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    networks: [sky-net]
+
+  admin-web:
+    build:
+      context: ../../frontend/admin-web
+      dockerfile: Dockerfile
+    image: sky-admin-web:dev
+    container_name: sky-admin-web
+    restart: unless-stopped
+    depends_on:
+      sky-server:
+        condition: service_healthy
+    environment:
+      SKY_BACKEND_ORIGIN: http://sky-server:8080
+      TZ: Asia/Shanghai
+    ports:
+      - "${ADMIN_WEB_PORT:-8888}:80"
+    networks: [sky-net]
+
+volumes:
+  mysql-data:
+  redis-data:
+  minio-data:
+
+networks:
+  sky-net:
+    driver: bridge

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.npm/
+.yarn/
+coverage/
+*.log
+.git/
+.idea/
+.vscode/
+report.*.json

@@ -1,0 +1,45 @@
+server {
+    listen       80;
+    server_name  _;
+    root   /usr/share/nginx/html;
+    index  index.html;
+
+    # 容器内 DNS 变化时不要缓存解析结果
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $backend_origin "${SKY_BACKEND_ORIGIN}";
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    # ---- 后端反向代理 ----
+    # 前端 baseURL 是 /api/admin，这里剥掉 /api 前缀后转发给后端
+    location /api/ {
+        proxy_pass         $backend_origin/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        "upgrade";
+        proxy_connect_timeout 5s;
+        proxy_read_timeout    60s;
+        client_max_body_size  20m;
+    }
+
+    # ---- 静态资源：长缓存 ----
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|ttf|eot)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # ---- SPA 兜底 ----
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options SAMEORIGIN;
+}
