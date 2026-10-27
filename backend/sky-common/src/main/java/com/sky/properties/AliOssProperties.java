@@ -1,5 +1,5 @@
 package com.sky.properties;
-
+// 存放 Spring Boot 相关配置的类
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;

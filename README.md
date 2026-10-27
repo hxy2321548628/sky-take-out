@@ -74,6 +74,7 @@ task up                       # 构建镜像并启动 mysql、redis、minio、�
 task --list          # 查看全部命令
 task up              # 启动全部服务（含构建镜像）
 task up:infra        # 只启动 mysql / redis / minio（后端在 IDE 里跑时用）
+task fe:docker       # Docker 启动管理端，/api 反代到本机后端
 task ps              # 查看容器与健康状态
 task logs            # 跟踪后端日志；task logs -- admin-web 可切换服务
 task down            # 停止服务（保留数据卷）

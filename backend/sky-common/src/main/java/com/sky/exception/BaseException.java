@@ -5,6 +5,7 @@ package com.sky.exception;
  */
 public class BaseException extends RuntimeException {
 
+    // 这里是重载
     public BaseException() {
     }
 

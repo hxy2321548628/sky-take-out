@@ -78,7 +78,7 @@ management:
 info:
   app:
     name: ${spring.application.name}
-    description: 苍穹外卖 · 云原生改造
+    description: 苍穹外卖
 
 sky:
   jwt:

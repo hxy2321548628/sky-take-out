@@ -133,10 +133,14 @@ services:
       sky-server:
         condition: service_healthy
     environment:
-      SKY_BACKEND_ORIGIN: http://sky-server:8080
+      # 默认反代到容器版后端；task fe:docker 会覆盖成 host.docker.internal（本机后端）
+      SKY_BACKEND_ORIGIN: ${SKY_BACKEND_ORIGIN:-http://sky-server:8080}
       TZ: Asia/Shanghai
     ports:
       - "${ADMIN_WEB_PORT:-8888}:80"
+    # 让 Linux 上的 Docker 也能解析 host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks: [sky-net]
 
 volumes:

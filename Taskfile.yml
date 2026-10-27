@@ -135,6 +135,15 @@ tasks:
     dir: frontend/admin-web
     cmds: ['yarn serve']
 
+  fe:docker:
+    desc: Docker 构建并启动管理端（/api 反代到本机后端，配合 task be:local）
+    deps: [doctor]
+    cmds:
+      # 只起 admin-web：不启动 sky-server，Nginx 直接反代到宿主机上的后端
+      - 'SKY_BACKEND_ORIGIN="http://host.docker.internal:${SERVER_PORT:-8080}" {{.COMPOSE}} up -d --build --no-deps --wait admin-web'
+      - 'echo "管理端 http://localhost:${ADMIN_WEB_PORT:-8888} → 本机后端 http://host.docker.internal:${SERVER_PORT:-8080}"'
+      - 'curl -fsS "http://localhost:${SERVER_PORT:-8080}/actuator/health" >/dev/null 2>&1 && echo "✓ 本机后端在线" || echo "! 本机后端未启动：另开终端 task be:local（就绪前后端会返回 502）"'
+
   # ---------- 冒烟 ----------
   smoke:
     desc: 冒烟测试（登录接口应返回 code=1）
