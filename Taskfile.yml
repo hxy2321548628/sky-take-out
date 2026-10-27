@@ -58,6 +58,9 @@ tasks:
     cmds:
       - '{{.COMPOSE}} up -d --wait mysql redis minio'
       - echo "mysql :3306  redis :6379  minio :9000  控制台 :9001"
+      - task: minio:init
+      - task: fe:docker
+      - task: ps
 
   minio:init:
     desc: 创建业务桶（幂等，可重复执行；task up 会自动调用）
